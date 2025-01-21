@@ -29,41 +29,33 @@ def preprocess(image, input_size=(640, 640)):
     image_transposed = np.transpose(image_normalized, (2, 0, 1))
     return np.expand_dims(image_transposed, axis=0).astype(np.float32)
 
-def nms(boxes, scores, iou_threshold):
-    indices = []
-    if len(boxes) == 0:
-        return indices
+def iou(box1, box2):
 
-    boxes = np.array(boxes)
-    scores = np.array(scores)
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    
+    intersection = max(0, x2 - x1 + 1) * max(0, y2 - y1 + 1)
+    area_box1 = (box1[2] - box1[0] + 1) * (box1[3] - box1[1] + 1)
+    area_box2 = (box2[2] - box2[0] + 1) * (box2[3] - box2[1] + 1)
+    
+    union = area_box1 + area_box2 - intersection
+    return intersection / union if union > 0 else 0
 
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2]
-    y2 = boxes[:, 3]
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-    order = scores.argsort()[::-1]
-
-    while order.size > 0:
-        i = order[0]
-        indices.append(i)
-
-        xx1 = np.maximum(x1[i], x1[order[1:]])
-        yy1 = np.maximum(y1[i], y1[order[1:]])
-        xx2 = np.minimum(x2[i], x2[order[1:]])
-        yy2 = np.minimum(y2[i], y2[order[1:]])
-
-        w = np.maximum(0, xx2 - xx1 + 1)
-        h = np.maximum(0, yy2 - yy1 + 1)
-        inter = w * h
-        if areas[i] == 0 or np.any(areas[order[1:]] == 0):
-            continue
-        iou = np.where(areas[i] + areas[order[1:]] - inter > 0, inter / (areas[i] + areas[order[1:]] - inter), 0)
-
-        order = order[np.where(iou <= iou_threshold)[0] + 1]
-
-    return indices
+def nms(boxes, scores, iou_threshold=0.4):
+    indices = list(range(len(boxes)))
+    sorted_indices = sorted(indices, key=lambda i: scores[i], reverse=True)
+    keep = []
+    
+    while sorted_indices:
+        current = sorted_indices.pop(0)
+        keep.append(current)
+        sorted_indices = [
+            i for i in sorted_indices
+            if iou(boxes[current], boxes[i]) < iou_threshold
+        ]
+    return keep
 
 def process_frame(frame):
     h, w, _ = frame.shape
@@ -120,6 +112,7 @@ while True:
         break
 
     current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    print(current_frame)
     current_time = current_frame / fps
     if current_time > 30:
         break
